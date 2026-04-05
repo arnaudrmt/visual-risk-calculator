@@ -51,7 +51,7 @@ VisualRiskCalc provides a fluid, Visual interface for trade management. Here is 
 
 Forget opening calculator apps. The process is entirely visual.
 
-1.  **Grab the Handle:** Look for the red arrow on the current price axis.
+1.  **Grab the Handle:** Look for the red line on the current price axis and drag it, **OR** type your exact target price into the "Stop Loss" box and press Enter.
 2.  **Drag to SL:** Pull it to where your Stop Loss should be. The tool activates immediately.
 3.  **Adjust:** You can tweak the **Risk %** or **R:R Ratio** in the panel while the lines are active; the lines and math will update instantly.
 4.  **Execute:** Click the large colored button at the bottom to place the order.
@@ -73,7 +73,10 @@ The on-chart GUI gives you full control without navigating menus.
 
 - **Risk % Field:** Change this to `0.5`, `2.0`, etc., to resize your position instantly.
 - **Reward Field:** Change this to `3.0` to extend your Take Profit line further out.
-- **Reset Button:** Cancels the current analysis, removes the lines, and resets the tool to the "Passive" state (waiting for you to drag the handle again).
+- **Stop Loss Field:** Manually type a specific price (e.g., `1.15600`) and press Enter for ultimate precision. The visual lines will instantly snap to this exact level.
+- **Type-Safety:** Enter numbers however you like. The calculator automatically converts commas (`,`) to dots (`.`).
+- **Exact Currency Loss:** The panel displays your exact calculated monetary risk natively in your account's currency (e.g., `Loss: 10.50 EUR`), automatically factoring in broker lot-step rounding.
+- **Reset Button:** Cancels the current analysis, removes the lines, and resets the tool to the "Passive" state.
 
 ---
 
@@ -82,5 +85,5 @@ The on-chart GUI gives you full control without navigating menus.
 - **Zero Dependencies:** Uses standard MQL5 libraries (`Trade.mqh`) included with every MT5 installation.
 - **Dynamic Stop Loss:** Dragging the SL line automatically adjusts the TP line to maintain your R:R ratio.
 - **Smart Direction:** Automatically detects **Long (Buy)** vs **Short (Sell)** based on whether the Stop Loss is below or above the current price.
-- **Currency Normalization:** Automatically handles `TickValue` and `Point` calculations for Forex, Indices, or Crypto (depending on broker data).
+- **Cross-Asset Math:** Uses MT5's native `TickSize` and `TickValue` mechanics. This guarantees 100% accurate risk calculations across **Forex, Crypto, Metals, and Indices**, perfectly converted to your account currency without blowing your account.
 - **Lot Normalization:** Automatically rounds lot sizes to the broker's `Step` value (e.g., 0.01 or 0.1) and adheres to Min/Max volume limits.

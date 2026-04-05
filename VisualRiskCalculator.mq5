@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                           VisualRiskCalc.mq5     |
-//|                                      Copyright 2025, Arnaud.     |
+//|                                      Copyright 2026, Arnaud.     |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2023, Automated Solution"
 #property version   "2.04"
@@ -24,6 +24,7 @@ bool   MouseIsDown = false;
 string ObjPanel     = PREFIX + "Panel";
 string ObjEditRisk  = PREFIX + "EditRisk";
 string ObjEditRR    = PREFIX + "EditRR";
+string ObjEditSL    = PREFIX + "EditSL";
 string ObjBtnTrade  = PREFIX + "BtnTrade";
 string ObjBtnReset  = PREFIX + "BtnReset";
 string ObjLineSL    = PREFIX + "LineSL";
@@ -134,9 +135,43 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    // --- EDITS ---
    if(id == CHARTEVENT_OBJECT_ENDEDIT)
    {
-      if(sparam == ObjEditRisk || sparam == ObjEditRR)
+      if(sparam == ObjEditRisk || sparam == ObjEditRR || sparam == ObjEditSL)
       {
-         RecalculateLogic();
+         // 1. Get raw text and replace commas with dots
+         string rawTxt = ObjectGetString(0, sparam, OBJPROP_TEXT);
+         StringReplace(rawTxt, ",", ".");
+         double val = StringToDouble(rawTxt);
+         
+         // 2. Validate and apply
+         if(sparam == ObjEditRisk)
+         {
+            if(val <= 0) val = DefRiskPercent; // Fallback if letters or 0
+            ObjectSetString(0, sparam, OBJPROP_TEXT, DoubleToString(val, 1));
+            RecalculateLogic();
+         }
+         else if(sparam == ObjEditRR)
+         {
+            if(val <= 0) val = DefRewardRatio; // Fallback if letters or 0
+            ObjectSetString(0, sparam, OBJPROP_TEXT, DoubleToString(val, 1));
+            RecalculateLogic();
+         }
+         else if(sparam == ObjEditSL)
+         {
+            int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+            if(val > 0)
+            {
+               ObjectSetString(0, sparam, OBJPROP_TEXT, DoubleToString(val, digits));
+               if(!LinesActive) ActivateTool(); 
+               if(ObjectFind(0, ObjLineSL) >= 0) ObjectSetDouble(0, ObjLineSL, OBJPROP_PRICE, val);
+               RecalculateLogic();
+            }
+            else
+            {
+               // Fallback if invalid: Reset text box to the current SL line price
+               double sl = ObjectGetDouble(0, ObjLineSL, OBJPROP_PRICE);
+               ObjectSetString(0, sparam, OBJPROP_TEXT, DoubleToString(sl, digits));
+            }
+         }
       }
    }
    
@@ -179,6 +214,10 @@ void RecalculateLogic()
    if(ObjectFind(0, ObjLineSL) < 0) return;
 
    double slPrice = ObjectGetDouble(0, ObjLineSL, OBJPROP_PRICE);
+   
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   ObjectSetString(0, ObjEditSL, OBJPROP_TEXT, DoubleToString(slPrice, digits));
+   
    double riskPerc = StringToDouble(ObjectGetString(0, ObjEditRisk, OBJPROP_TEXT));
    double rrRatio  = StringToDouble(ObjectGetString(0, ObjEditRR, OBJPROP_TEXT));
    double balance  = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -219,12 +258,16 @@ void RecalculateLogic()
    // --- Risk Calculation ---
    double riskMoney = balance * (riskPerc / 100.0);
    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double pointSize = _Point;
+   double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    
-   if(distPoints < pointSize) distPoints = pointSize;
+   if(distPoints < tickSize) distPoints = tickSize;
    
-   double distInPointsInt = distPoints / pointSize;
-   double rawLots = riskMoney / (distInPointsInt * tickValue);
+   // Calculate risk using proper MT5 Ticks
+   double ticksAtRisk = distPoints / tickSize;
+   double rawLots = riskMoney / (ticksAtRisk * tickValue);
+   
+   // Keep Pips calculation for the visual label
+   double distInPointsInt = distPoints / _Point; 
    
    double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    double min  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
@@ -234,8 +277,12 @@ void RecalculateLogic()
    if(calculatedLots < min) calculatedLots = min;
    if(calculatedLots > max) calculatedLots = max;
    
+   // Calculate actual exact loss using ticks
+   double actualLoss = calculatedLots * ticksAtRisk * tickValue;
+   
    // Update Separate Labels
-   ObjectSetString(0, ObjLblRiskVal, OBJPROP_TEXT, StringFormat("Risk: $%.2f (%.1f%%)", riskMoney, riskPerc));
+   string accCurrency = AccountInfoString(ACCOUNT_CURRENCY);
+   ObjectSetString(0, ObjLblRiskVal, OBJPROP_TEXT, StringFormat("Loss: %.2f %s", actualLoss, accCurrency));
    ObjectSetString(0, ObjLblLotsVal, OBJPROP_TEXT, StringFormat("Lots: %.2f", calculatedLots));
    ObjectSetString(0, ObjLblPipsVal, OBJPROP_TEXT, StringFormat("Pips: %.1f", distInPointsInt/10.0));
    ObjectSetString(0, ObjLblRRVal,   OBJPROP_TEXT, StringFormat("R:R:  1:%.1f", rrRatio));
@@ -264,6 +311,7 @@ void ResetTool()
    ObjectSetString(0, ObjLblLotsVal, OBJPROP_TEXT, "To Start");
    ObjectSetString(0, ObjLblPipsVal, OBJPROP_TEXT, " ");
    ObjectSetString(0, ObjLblRRVal,   OBJPROP_TEXT, " ");
+   ObjectSetString(0, ObjEditSL, OBJPROP_TEXT, "0.00000");
 
    ObjectSetString(0, ObjBtnTrade, OBJPROP_TEXT, "WAITING");
    ObjectSetInteger(0, ObjBtnTrade, OBJPROP_BGCOLOR, clrGray);
@@ -311,7 +359,7 @@ void CreateGUI()
    int x = 30;
    int y = PanelYOffset;
    int w = 300;
-   int h = 380;
+   int h = 420;
    
    // Main Panel
    ObjectCreate(0, ObjPanel, OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -331,11 +379,15 @@ void CreateGUI()
    // Inputs
    int rowY = y + 60;
    CreateLabel(PREFIX+"LblRisk", x+15, rowY, "Risk %:", 9, clrLightGray);
-   CreateEdit(ObjEditRisk, x+120, rowY, 60, DoubleToString(DefRiskPercent, 1));
+   CreateEdit(ObjEditRisk, x+135, rowY, 100, DoubleToString(DefRiskPercent, 1));
    
    rowY += 40;
    CreateLabel(PREFIX+"LblRR", x+15, rowY, "Reward:", 9, clrLightGray);
-   CreateEdit(ObjEditRR, x+120, rowY, 60, DoubleToString(DefRewardRatio, 1));
+   CreateEdit(ObjEditRR, x+135, rowY, 100, DoubleToString(DefRewardRatio, 1));
+   
+   rowY += 40;
+   CreateLabel(PREFIX+"LblSL", x+15, rowY, "Stop Loss:", 9, clrLightGray);
+   CreateEdit(ObjEditSL, x+135, rowY, 100, "0.00000");
    
    // Info Display - Stacked Labels
    rowY += 50;
@@ -384,10 +436,10 @@ void CreateEdit(string name, int x, int y, int w, string text)
    ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
    ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y-2);
    ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
-   ObjectSetInteger(0, name, OBJPROP_YSIZE, 22);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, 24);
    ObjectSetString(0, name, OBJPROP_TEXT, text);
    ObjectSetString(0, name, OBJPROP_FONT, "Calibri");
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 10);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
    ObjectSetInteger(0, name, OBJPROP_ALIGN, ALIGN_CENTER);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clrBlack);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrWhiteSmoke);
